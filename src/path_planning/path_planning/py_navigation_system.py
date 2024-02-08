@@ -4,6 +4,9 @@ from custom_interfaces.msg import State, HelperPosition, HeadingAngle
 import os
 import csv
 
+from path_planning.ompl_path import OMPLPath
+
+
 class NavigateSystem(Node):
     def __init__(self):
         super().__init__('navigate_system')
@@ -91,6 +94,16 @@ class NavigateSystem(Node):
             self.get_logger().error(f"Voyage Definition CSV file not found at {file_path}")
         except (ValueError, IndexError):
             self.get_logger().error("Error parsing Voyage Definition CSV data.")
+
+
+    def get_ship_optimized_state(self):
+        ompl_path = OMPLPath(parent_logger= self.get_logger, max_runtime=1.0)
+        if ompl_path.solved:
+            self.get_logger("Solved")
+
+        return None
+    
+        
 
 
 def main(args=None):

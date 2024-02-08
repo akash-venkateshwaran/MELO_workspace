@@ -41,6 +41,12 @@ RUN apt-get update \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/{apt,dpkg,cache,log} /tmp/* /var/tmp/*
 RUN pip3 install pygccxml pyplusplus
+
+#Install python3 pkgs
+RUN pip3 install pyproj
+RUN pip3 install plotly
+
+
 WORKDIR /ompl
 RUN cmake \
         -G Ninja \
