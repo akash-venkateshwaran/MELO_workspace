@@ -2,6 +2,10 @@ from ompl import base as ob
 from ompl import geometric as og
 from ompl import util as ou
 from rclpy.impl.rcutils_logger import RcutilsLogger
+from typing import TYPE_CHECKING, List, Tuple, Type
+
+import numpy as np
+import plotly.graph_objs as go
 
 from path_planning.objectives import get_sailing_objective
 from custom_interfaces.msg import State, HelperPosition, HeadingAngle
@@ -34,7 +38,7 @@ class OMPLPath:
 
     def __init__(
         self,
-        parent_logger: RcutilsLogger,
+        # parent_logger: RcutilsLogger,
         max_runtime: float
     ):
         """Initialize the OMPLPath Class. Attempt to solve for a path.
@@ -44,7 +48,7 @@ class OMPLPath:
             max_runtime (float): Maximum amount of time in seconds to look for a solution path.
             local_path_state (LocalPathState): State of Sailbot.
         """
-        self._logger = parent_logger.get_child(name="ompl_path")
+        # self._logger = parent_logger.get_child(name="ompl_path")
         self.state = OMPLPathState()
         self._simple_setup = self._init_simple_setup()
         self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
@@ -73,16 +77,17 @@ class OMPLPath:
         waypoints = []
 
         for state in solution_path.getStates():
-            waypoint_XY = cs.XY(state.getX(), state.getY())
-            waypoint_latlon = cs.xy_to_latlon(self.state.reference_latlon, waypoint_XY)
+            #TODO Convert XY to lat lon before appending
+            #  waypoint_XY = cs.XY(state.getX(), state.getY())
+            # waypoint_latlon = cs.xy_to_latlon(self.state.reference_latlon, waypoint_XY)
             waypoints.append(
-                HelperLatLon(
-                    latitude=waypoint_latlon.latitude, longitude=waypoint_latlon.longitude
+                HelperPosition(
+                    latitude=state.getX(), longitude=state.getY(), depth = 0.0
                 )
             )
 
         return waypoints
-
+    
     def update_objectives(self):
         """Update the objectives on the basis of which the path is optimized.
         Raises:
@@ -108,7 +113,13 @@ class OMPLPath:
         bounds.setLow(index=1, value=y_min)
         bounds.setHigh(index=0, value=x_max)
         bounds.setHigh(index=1, value=y_max)
-        self._logger.debug(
+
+        # self._logger.debug(
+        #     "state space bounds: "
+        #     f"x=[{bounds.low[0]}, {bounds.high[0]}]; "
+        #     f"y=[{bounds.low[1]}, {bounds.high[1]}]"
+        # )
+        print(
             "state space bounds: "
             f"x=[{bounds.low[0]}, {bounds.high[0]}]; "
             f"y=[{bounds.low[1]}, {bounds.high[1]}]"
@@ -127,11 +138,18 @@ class OMPLPath:
         goal_x, goal_y = self.state.goal_state
         start().setXY(start_x, start_y)
         goal().setXY(goal_x, goal_y)
-        self._logger.debug(
+
+        # self._logger.debug(
+        #     "start and goal state: "
+        #     f"start=({start().getX()}, {start().getY()}); "
+        #     f"goal=({goal().getX()}, {goal().getY()})"
+        # )
+        print(
             "start and goal state: "
             f"start=({start().getX()}, {start().getY()}); "
             f"goal=({goal().getX()}, {goal().getY()})"
         )
+        
         simple_setup.setStartAndGoalStates(start, goal)
 
         # Constructs a space information instance for this simple setup
@@ -154,7 +172,35 @@ class OMPLPath:
         simple_setup.setPlanner(planner)
 
         return simple_setup
+    
+    def plot_solution(self):
+        # Setup for plotting
+        x = np.linspace(self.state.state_domain[0], self.state.state_domain[1], 500)
+        y = np.linspace(self.state.state_range[0], self.state.state_range[1], 500)
+        X, Y = np.meshgrid(x, y)
+        Z = np.zeros(X.shape)
 
+        space = self._simple_setup.getStateSpace()
+        objective = self._simple_setup.getOptimizationObjective()
+
+        for i in range(X.shape[0]):
+            for j in range(X.shape[1]):
+                state = ob.State(space)
+                state().setXY(X[i][j], Y[i][j])
+                raw_state = state.get()
+                cost = objective.stateCost(raw_state)
+
+                Z[i][j] = cost.value()
+        
+        fig = go.Figure(data=go.Contour(x=x, y=y, z=Z))
+
+        fig.update_layout(title='Solution Contour Plot',
+                        xaxis_title='X',
+                        yaxis_title='Y')
+        
+        fig.show()
+
+        
 
 def is_state_valid(state: ob.SE2StateSpace) -> bool:
     """Evaluate a state to determine if the configuration collides with an environment obstacle.
@@ -168,3 +214,15 @@ def is_state_valid(state: ob.SE2StateSpace) -> bool:
     # TODO: implement obstacle avoidance here
     # note: `state` is of type `SE2StateInternal`, so we don't need to use the `()` operator.
     return state.getX() < 0.6
+
+
+
+def main(args=None):
+    ompl_path = OMPLPath(max_runtime=1.0)
+    if ompl_path.solved:
+            # self.get_logger("Solved")
+        print("Solved")
+        ompl_path.plot_solution()
+
+if __name__ == '__main__':
+    main()
