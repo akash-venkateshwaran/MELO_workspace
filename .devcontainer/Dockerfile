@@ -45,7 +45,7 @@ RUN pip3 install pygccxml pyplusplus
 #Install python3 pkgs
 RUN pip3 install pyproj
 RUN pip3 install plotly
-
+RUN pip3 install pyproj
 
 WORKDIR /ompl
 RUN cmake \

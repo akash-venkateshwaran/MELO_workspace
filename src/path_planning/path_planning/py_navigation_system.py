@@ -4,18 +4,22 @@ from custom_interfaces.msg import State, HelperPosition, HeadingAngle
 import os
 import csv
 
-from path_planning.ompl_path import OMPLPath
+from path_planning.ompl_path import OMPLPath, OMPLPathState
 
 
 class NavigateSystem(Node):
     def __init__(self):
         super().__init__('navigate_system')
         self.setup_logger()
+        self.verbose_logging = False
+        self.ompl_path_state = None
         self.ship_current_state = State()
+        self.mammal_current_state = State()
         # TODO here the path is hard coded
         self.load_voyage_definition(os.path.join(os.getcwd(), 'src', 'path_planning','Voyage_definition.csv'))
         self.ship_optimized_state = self.generate_state(0.0, 0.0, 0.0, 90.0, 150.0) # Note that we won't be using the first three elemets. We are exporting only optimized speed and heading
 
+        self.temp = 0
         # Create publishers for 'ship_start_state', 'ship_end_state', and 'ship_optimized_state'
         self.ship_start_state_publisher = self.create_publisher(
             State,
@@ -44,6 +48,15 @@ class NavigateSystem(Node):
         )
         self.ship_state_subscription  # prevent unused variable warning
 
+        # Subscribe to the 'ship_state' topic
+        self.mammal_state_subscription = self.create_subscription(
+            State,
+            'mammal_state',
+            self.mammal_state_callback,
+            10
+        )
+        self.ship_state_subscription  # prevent unused variable warning
+
         # Timer to periodically publish ship_start_state, ship_end_state, and ship_optimized_state
         self.publish_timer = self.create_timer(1, self.publish_states)
     
@@ -60,10 +73,20 @@ class NavigateSystem(Node):
     def ship_state_callback(self, msg):
         # Update ship_current_state attribute when a new message is received
         self.ship_current_state = msg
-        self.get_logger().info(
-            f'I heard Ship State: [{msg.position.latitude}, {msg.position.longitude}, {msg.position.depth}], '
-            f'Angle: {msg.angle.heading}, Speed: {msg.speed} m/s'
-        )
+        if self.verbose_logging:
+            self.get_logger().info(
+                f'I heard Ship State: [{msg.position.latitude}, {msg.position.longitude}, {msg.position.depth}], '
+                f'Angle: {msg.angle.heading}, Speed: {msg.speed} m/s')
+        self.ompl_path_state = self.update_ompl_state()
+            
+    def mammal_state_callback(self, msg):
+        # Update ship_current_state attribute when a new message is received
+        self.mammal_current_state = msg
+        if self.verbose_logging:
+            self.get_logger().info(
+                f'I heard Mammal State: [{msg.position.latitude}, {msg.position.longitude}, {msg.position.depth}], '
+                f'Angle: {msg.angle.heading}, Speed: {msg.speed} m/s')
+        self.ompl_path_state = self.update_ompl_state()
 
     def publish_states(self):
         # Publish ship_start_state, ship_end_state, and ship_optimized_state periodically
@@ -96,14 +119,15 @@ class NavigateSystem(Node):
             self.get_logger().error("Error parsing Voyage Definition CSV data.")
 
 
-    def get_ship_optimized_state(self):
-        ompl_path = OMPLPath(parent_logger= self.get_logger, max_runtime=1.0)
-        if ompl_path.solved:
-            self.get_logger("Solved")
-
-        return None
-    
-        
+    def update_ompl_state(self):
+        self.temp += 1
+        if self.temp<=2:
+            return(OMPLPathState(
+                    self.ship_current_state,
+                    self.mammal_current_state,
+                    self.ship_start_state,
+                    self.ship_end_state
+                ))
 
 
 def main(args=None):

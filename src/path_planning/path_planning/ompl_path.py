@@ -2,29 +2,144 @@ from ompl import base as ob
 from ompl import geometric as og
 from ompl import util as ou
 from rclpy.impl.rcutils_logger import RcutilsLogger
-from typing import TYPE_CHECKING, List, Tuple, Type
+from typing import List
+from pyproj import Geod
+import math
 
 import numpy as np
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 
 from path_planning.objectives import get_sailing_objective
 from custom_interfaces.msg import State, HelperPosition, HeadingAngle
 
 ou.setLogLevel(ou.LOG_WARN)
+GEODESIC = Geod(ellps="WGS84")
 
 
 class OMPLPathState:
-    def __init__(self):
+    def __init__(self,ship_current_state: State, mammal_current_state: State, ship_start_state: State, ship_end_state: State ):
         # TODO: derive OMPLPathState attributes from navigation
-        self.ship_state = State()
-        self.mammal_state = State()
+        # Note that when you convert latlon to XY the distance btw two points in XY is in km
 
-        self.state_domain = (-1, 1)
-        self.state_range = (-1, 1)
-        self.start_state = (0.5, 0.4)
-        self.goal_state = (0.5, -0.4)
+        def init_helper(state):
+            return HelperPosition(
+                    latitude=state.position.latitude,
+                    longitude=state.position.longitude,
+                    depth=state.position.depth
+                )
 
-        self.reference_latlon = None
+        # Initialize state objects
+        self.mammal_position = init_helper(mammal_current_state)
+        self.ship_position = init_helper(ship_current_state)
+        self.start_position = self.reference_latlon = init_helper(ship_start_state)
+        self.goal_position = init_helper(ship_end_state)
+
+        self.start_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.start_position)
+        self.goal_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.goal_position)
+        self.mammal_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.mammal_position)
+        self.ship_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.ship_position)
+
+        latlon_states = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
+        xy_states = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
+        self.plot_latlon_xy_side_by_side(latlon_states, xy_states)
+
+    def cartesian_to_true_bearing(self,cartesian: float) -> float:
+        """Convert a cartesian angle to the equivalent true bearing.
+
+        Args:
+            cartesian (float): Angle where 0 is east and values increase counter-clockwise.
+
+        Returns:
+            float: Angle where 0 is north and values increase clockwise.
+        """
+        return (90 - cartesian + 360) % 360
+
+
+    def meters_to_km(self,meters: float) -> float:
+        return meters / 1000
+
+
+    def km_to_meters(self,km: float) -> float:
+        return km * 1000
+    
+    def latlon_to_xy(self,reference: HelperPosition, latlon: HelperPosition) -> tuple:
+        """Convert a geographical coordinate to a 2D Cartesian coordinate given a reference point.
+
+        Args:
+            reference (HelperLatLon): Origin of the Cartesian coordinate system.
+            latlon (HelperLatLon): Coordinate to be converted to the Cartesian coordinate system.
+
+        Returns:
+            XY: The x and y components in km.
+        """
+        forward_azimuth_deg, _, distance_m = GEODESIC.inv(
+            reference.longitude, reference.latitude, latlon.longitude, latlon.latitude
+        )
+        true_bearing = math.radians(forward_azimuth_deg)
+        distance = self.meters_to_km(distance_m)
+
+        return (distance * math.sin(true_bearing),distance * math.cos(true_bearing))
+
+
+    def xy_to_latlon(self,reference: HelperPosition, xy: tuple) -> HelperPosition:
+        """Convert a 2D Cartesian coordinate to a geographical coordinate given a reference point.
+
+        Args:
+            reference (HelperLatLon): Coordinate that is the origin of the Cartesian coordinate system.
+            xy (XY): Coordinate to be converted to the geographical coordinate system.
+
+        Returns:
+            HelperLatLon: The latitude and longitude in degrees.
+        """
+        true_bearing = math.degrees(math.atan2(xy.x, xy.y))
+        distance = self.km_to_meters(math.hypot(*xy))
+        dest_lon, dest_lat, _ = GEODESIC.fwd(
+            reference.longitude, reference.latitude, true_bearing, distance
+        )
+
+        return HelperPosition(latitude=dest_lat, longitude=dest_lon)
+    
+    def plot_latlon_xy_side_by_side(self, latlon_states, xy_states):
+        # Create subplots: one for geographic data, one for Cartesian data
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=("Geographic (Lat/Lon) States", "Cartesian (XY) States"),
+            specs=[[{"type": "scattergeo"}, {"type": "xy"}]]  # Specify the types of plots for each subplot
+        )
+
+        # Add geographic (lat/lon) plot data
+        latitudes = [state.latitude for state in latlon_states]
+        longitudes = [state.longitude for state in latlon_states]
+        fig.add_trace(
+            go.Scattergeo(lat=latitudes, lon=longitudes, mode='markers', name='Lat/Lon'),
+            row=1, col=1
+        )
+
+        # Add Cartesian (XY) plot data
+        x_values = [state[0] for state in xy_states]
+        y_values = [state[1] for state in xy_states]
+        fig.add_trace(
+            go.Scatter(x=x_values, y=y_values, mode='markers', name='XY'),
+            row=1, col=2
+        )
+
+        # Update layout for better visualization
+        fig.update_geos(
+            projection_type="natural earth",
+            landcolor="rgb(243, 243, 243)",
+            oceancolor="rgb(204, 230, 255)",
+            showcountries=True,
+            countrycolor="rgb(204, 204, 204)"
+        )
+
+        fig.update_layout(
+            title_text='Geographic vs Cartesian States',
+            height=600, width=1200
+        )
+
+        # Show the figure
+        fig.write_html("figure2.html")
 
 
 class OMPLPath:
@@ -102,7 +217,6 @@ class OMPLPath:
             og.SimpleSetup: Encapsulates the various objects necessary to solve a geometric or
                 control query in OMPL.
         """
-        # create an SE2 state space: rotation and translation in a plane
         space = ob.SE2StateSpace()
 
         # set the bounds of the state space
@@ -174,7 +288,6 @@ class OMPLPath:
         return simple_setup
     
     def plot_solution(self):
-        # Setup for plotting
         x = np.linspace(self.state.state_domain[0], self.state.state_domain[1], 500)
         y = np.linspace(self.state.state_range[0], self.state.state_range[1], 500)
         X, Y = np.meshgrid(x, y)
@@ -182,6 +295,7 @@ class OMPLPath:
 
         space = self._simple_setup.getStateSpace()
         objective = self._simple_setup.getOptimizationObjective()
+        waypoints = self.get_waypoints()
 
         for i in range(X.shape[0]):
             for j in range(X.shape[1]):
@@ -194,11 +308,16 @@ class OMPLPath:
         
         fig = go.Figure(data=go.Contour(x=x, y=y, z=Z))
 
+        if waypoints: 
+            wp_lat = [wp.latitude for wp in waypoints] 
+            wp_lon = [wp.longitude for wp in waypoints]
+            fig.add_trace(go.Scatter(x=wp_lat, y=wp_lon, mode='markers+lines', name='Waypoints'))
+
         fig.update_layout(title='Solution Contour Plot',
-                        xaxis_title='X',
-                        yaxis_title='Y')
+                      xaxis_title='X',
+                      yaxis_title='Y')
         
-        fig.show()
+        fig.write_html("figure.html")
 
         
 

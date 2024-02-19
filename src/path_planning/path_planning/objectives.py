@@ -13,7 +13,7 @@ class EuclideanDistanceObjective(ob.StateCostIntegralObjective):
 
     def stateCost(self, s):
         distance = math.sqrt((s.getX() - self.mammal_state_temp[0]) ** 2 + (s.getY() - self.mammal_state_temp[1]) ** 2)
-        return distance
+        return 1/(distance+0.01)
     
 
 
