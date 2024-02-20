@@ -19,7 +19,6 @@ class NavigateSystem(Node):
         self.load_voyage_definition(os.path.join(os.getcwd(), 'src', 'path_planning','Voyage_definition.csv'))
         self.ship_optimized_state = self.generate_state(0.0, 0.0, 0.0, 90.0, 150.0) # Note that we won't be using the first three elemets. We are exporting only optimized speed and heading
 
-        self.temp = 0
         # Create publishers for 'ship_start_state', 'ship_end_state', and 'ship_optimized_state'
         self.ship_start_state_publisher = self.create_publisher(
             State,
@@ -77,7 +76,7 @@ class NavigateSystem(Node):
             self.get_logger().info(
                 f'I heard Ship State: [{msg.position.latitude}, {msg.position.longitude}, {msg.position.depth}], '
                 f'Angle: {msg.angle.heading}, Speed: {msg.speed} m/s')
-        self.ompl_path_state = self.update_ompl_state()
+        self.solve_ompl()
             
     def mammal_state_callback(self, msg):
         # Update ship_current_state attribute when a new message is received
@@ -86,7 +85,7 @@ class NavigateSystem(Node):
             self.get_logger().info(
                 f'I heard Mammal State: [{msg.position.latitude}, {msg.position.longitude}, {msg.position.depth}], '
                 f'Angle: {msg.angle.heading}, Speed: {msg.speed} m/s')
-        self.ompl_path_state = self.update_ompl_state()
+        self.solve_ompl()
 
     def publish_states(self):
         # Publish ship_start_state, ship_end_state, and ship_optimized_state periodically
@@ -119,15 +118,38 @@ class NavigateSystem(Node):
             self.get_logger().error("Error parsing Voyage Definition CSV data.")
 
 
-    def update_ompl_state(self):
-        self.temp += 1
-        if self.temp<=2:
-            return(OMPLPathState(
-                    self.ship_current_state,
-                    self.mammal_current_state,
-                    self.ship_start_state,
-                    self.ship_end_state
-                ))
+    def solve_ompl(self):
+        print("Innn")
+        is_ship_state_changed = (self.ship_current_state.position.latitude != 0.0 or
+                                self.ship_current_state.position.longitude != 0.0 or
+                                self.ship_current_state.position.depth != 0.0 or
+                                self.ship_current_state.angle.heading != 0.0 or 
+                                self.ship_current_state.speed != 0.0)
+
+        is_mammal_state_changed = (self.mammal_current_state.position.latitude != 0.0 or
+                                self.mammal_current_state.position.longitude != 0.0 or
+                                self.mammal_current_state.position.depth != 0.0 or
+                                self.mammal_current_state.angle.heading != 0.0 or  
+                                self.mammal_current_state.speed != 0.0)  
+
+        
+        if is_ship_state_changed and is_mammal_state_changed:
+            self.ompl_path_state = OMPLPathState(
+                self.ship_current_state,
+                self.mammal_current_state,
+                self.ship_start_state,
+                self.ship_end_state
+            )
+            ompl_path = OMPLPath(max_runtime=1.0, ompl_state=self.ompl_path_state)
+            if ompl_path.solved:
+                self.get_logger().info("Solved")
+                ompl_path.plot_solution()
+            else:
+                self.get_logger().info("Not solved within the given runtime")
+        else:
+            self.get_logger().info("Ship and mammal states have not changed from initialization; skipping OMPLPath execution.")
+
+            
 
 
 def main(args=None):

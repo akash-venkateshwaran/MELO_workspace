@@ -40,9 +40,18 @@ class OMPLPathState:
         self.mammal_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.mammal_position)
         self.ship_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.ship_position)
 
-        latlon_states = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
-        xy_states = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
-        self.plot_latlon_xy_side_by_side(latlon_states, xy_states)
+        # adding 1 km buffer for domain and range of XY
+        self.domain_XY = (min(self.start_position_XY[0], self.goal_position_XY[0], self.mammal_position_XY[0], self.ship_position_XY[0]) - 1, max(self.start_position_XY[0], self.goal_position_XY[0], self.mammal_position_XY[0], self.ship_position_XY[0]) + 1)
+        self.range_XY = (min(self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]) - 1, max(self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]) + 1)
+
+        print(self.ship_position_XY)
+
+
+
+
+        # latlon_states = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
+        # xy_states = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
+        # self.plot_latlon_xy_side_by_side(latlon_states, xy_states)
 
     def cartesian_to_true_bearing(self,cartesian: float) -> float:
         """Convert a cartesian angle to the equivalent true bearing.
@@ -101,6 +110,8 @@ class OMPLPathState:
         return HelperPosition(latitude=dest_lat, longitude=dest_lon)
     
     def plot_latlon_xy_side_by_side(self, latlon_states, xy_states):
+        # print(latlon_states, "\n\n")
+        # print(xy_states)
         # Create subplots: one for geographic data, one for Cartesian data
         fig = make_subplots(
             rows=1, cols=2,
@@ -108,21 +119,25 @@ class OMPLPathState:
             specs=[[{"type": "scattergeo"}, {"type": "xy"}]]  # Specify the types of plots for each subplot
         )
 
-        # Add geographic (lat/lon) plot data
-        latitudes = [state.latitude for state in latlon_states]
-        longitudes = [state.longitude for state in latlon_states]
-        fig.add_trace(
-            go.Scattergeo(lat=latitudes, lon=longitudes, mode='markers', name='Lat/Lon'),
-            row=1, col=1
-        )
+        # Define colors for different states for visualization
+        colors = ['red', 'green', 'blue', 'purple']  # Add more colors if there are more than four states
 
-        # Add Cartesian (XY) plot data
-        x_values = [state[0] for state in xy_states]
-        y_values = [state[1] for state in xy_states]
-        fig.add_trace(
-            go.Scatter(x=x_values, y=y_values, mode='markers', name='XY'),
-            row=1, col=2
-        )
+        # Add geographic (lat/lon) plot data
+        for idx, state in enumerate(latlon_states):
+            fig.add_trace(
+                go.Scattergeo(lat=[state.latitude], lon=[state.longitude],
+                            mode='markers', name=f'Lat/Lon {idx}',
+                            marker=dict(color=colors[idx], size=10)),
+                row=1, col=1
+            )
+
+        # Add Cartesian (XY) plot data, using the same colors
+        for idx, state in enumerate(xy_states):
+            fig.add_trace(
+                go.Scatter(x=[state[0]], y=[state[1]], mode='markers', name=f'XY {idx}',
+                        marker=dict(color=colors[idx], size=10)),  # Use same color for corresponding XY states
+                row=1, col=2
+            )
 
         # Update layout for better visualization
         fig.update_geos(
@@ -130,7 +145,19 @@ class OMPLPathState:
             landcolor="rgb(243, 243, 243)",
             oceancolor="rgb(204, 230, 255)",
             showcountries=True,
-            countrycolor="rgb(204, 204, 204)"
+            countrycolor="rgb(204, 204, 204)",
+            showcoastlines=True,
+            coastlinecolor="rgb(102, 102, 102)",
+            showland=True,
+            showocean=True,
+            showlakes=True,
+            lakecolor="rgb(204, 230, 255)",
+            showrivers=True,
+            rivercolor="rgb(204, 230, 255)",
+            showsubunits=True,
+            subunitcolor="rgb(204, 204, 204)",
+            showframe=True,
+            fitbounds="locations"
         )
 
         fig.update_layout(
@@ -153,6 +180,7 @@ class OMPLPath:
 
     def __init__(
         self,
+        ompl_state: OMPLPathState,
         # parent_logger: RcutilsLogger,
         max_runtime: float
     ):
@@ -164,8 +192,8 @@ class OMPLPath:
             local_path_state (LocalPathState): State of Sailbot.
         """
         # self._logger = parent_logger.get_child(name="ompl_path")
-        self.state = OMPLPathState()
-        self._simple_setup = self._init_simple_setup()
+
+        self._simple_setup = self._init_simple_setup(ompl_state)
         self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
 
     def get_cost(self):
@@ -210,7 +238,7 @@ class OMPLPath:
         """
         raise NotImplementedError
 
-    def _init_simple_setup(self) -> og.SimpleSetup:
+    def _init_simple_setup(self,ompl_state: OMPLPathState) -> og.SimpleSetup:
         """Initialize and configure the OMPL SimpleSetup object.
 
         Returns:
@@ -218,15 +246,14 @@ class OMPLPath:
                 control query in OMPL.
         """
         space = ob.SE2StateSpace()
+        self.ompl_state = ompl_state
 
         # set the bounds of the state space
         bounds = ob.RealVectorBounds(dim=2)
-        x_min, x_max = self.state.state_domain
-        y_min, y_max = self.state.state_range
-        bounds.setLow(index=0, value=x_min)
-        bounds.setLow(index=1, value=y_min)
-        bounds.setHigh(index=0, value=x_max)
-        bounds.setHigh(index=1, value=y_max)
+        bounds.setLow(index=0, value=self.ompl_state.domain_XY[0])
+        bounds.setLow(index=1, value=self.ompl_state.range_XY[0])
+        bounds.setHigh(index=0, value=self.ompl_state.domain_XY[1])
+        bounds.setHigh(index=1, value=self.ompl_state.range_XY[1])
 
         # self._logger.debug(
         #     "state space bounds: "
@@ -243,15 +270,13 @@ class OMPLPath:
 
         # create a simple setup object
         simple_setup = og.SimpleSetup(space)
-        simple_setup.setStateValidityChecker(ob.StateValidityCheckerFn(is_state_valid))
+        # simple_setup.setStateValidityChecker(ob.StateValidityCheckerFn(is_state_valid))
 
         # set the goal and start states of the simple setup object
         start = ob.State(space)
         goal = ob.State(space)
-        start_x, start_y = self.state.start_state
-        goal_x, goal_y = self.state.goal_state
-        start().setXY(start_x, start_y)
-        goal().setXY(goal_x, goal_y)
+        start().setXY(self.ompl_state.start_position_XY[0], self.ompl_state.start_position_XY[1])
+        goal().setXY(self.ompl_state.goal_position_XY[0], self.ompl_state.goal_position_XY[1])
 
         # self._logger.debug(
         #     "start and goal state: "
@@ -275,8 +300,8 @@ class OMPLPath:
         objective = get_sailing_objective(
             space_information,
             simple_setup,
-            self.state.ship_state,
-            self.state.mammal_state
+            self.ompl_state.ship_position_XY,
+            self.ompl_state.mammal_position_XY
         )
         simple_setup.setOptimizationObjective(objective)
 
@@ -288,14 +313,14 @@ class OMPLPath:
         return simple_setup
     
     def plot_solution(self):
-        x = np.linspace(self.state.state_domain[0], self.state.state_domain[1], 500)
-        y = np.linspace(self.state.state_range[0], self.state.state_range[1], 500)
+        x = np.linspace(self.ompl_state.domain_XY[0], self.ompl_state.domain_XY[1], 500)
+        y = np.linspace(self.ompl_state.range_XY[0], self.ompl_state.range_XY[1], 500)
         X, Y = np.meshgrid(x, y)
         Z = np.zeros(X.shape)
 
         space = self._simple_setup.getStateSpace()
         objective = self._simple_setup.getOptimizationObjective()
-        waypoints = self.get_waypoints()
+        waypoints_XY = self.get_waypoints()
 
         for i in range(X.shape[0]):
             for j in range(X.shape[1]):
@@ -303,23 +328,34 @@ class OMPLPath:
                 state().setXY(X[i][j], Y[i][j])
                 raw_state = state.get()
                 cost = objective.stateCost(raw_state)
-
                 Z[i][j] = cost.value()
         
         fig = go.Figure(data=go.Contour(x=x, y=y, z=Z))
 
-        if waypoints: 
-            wp_lat = [wp.latitude for wp in waypoints] 
-            wp_lon = [wp.longitude for wp in waypoints]
-            fig.add_trace(go.Scatter(x=wp_lat, y=wp_lon, mode='markers+lines', name='Waypoints'))
+        if waypoints_XY: 
+            wp_X = [wp.latitude for wp in waypoints_XY] 
+            wp_Y = [wp.longitude for wp in waypoints_XY]
+            fig.add_trace(go.Scatter(x=wp_X, y=wp_Y, mode='markers+lines', name='Waypoints XY'))
+
+        # Scatter plot for start and goal positions
+        fig.add_trace(go.Scatter(x=[self.ompl_state.start_position_XY[0]], y=[self.ompl_state.start_position_XY[1]],
+                                mode='markers', name='Start Position', marker=dict(color='green', size=12)))
+        fig.add_trace(go.Scatter(x=[self.ompl_state.goal_position_XY[0]], y=[self.ompl_state.goal_position_XY[1]],
+                                mode='markers', name='Goal Position', marker=dict(color='orange', size=12)))
+
+        # Scatter plot for ship and mammal positions
+        fig.add_trace(go.Scatter(x=[self.ompl_state.ship_position_XY[0]], y=[self.ompl_state.ship_position_XY[1]],
+                                mode='markers', name='Ship Position', marker=dict(color='blue', size=12)))
+        fig.add_trace(go.Scatter(x=[self.ompl_state.mammal_position_XY[0]], y=[self.ompl_state.mammal_position_XY[1]],
+                                mode='markers', name='Mammal Position', marker=dict(color='red', size=12)))
 
         fig.update_layout(title='Solution Contour Plot',
-                      xaxis_title='X',
-                      yaxis_title='Y')
+                        xaxis_title='X',
+                        yaxis_title='Y')
         
         fig.write_html("figure.html")
 
-        
+
 
 def is_state_valid(state: ob.SE2StateSpace) -> bool:
     """Evaluate a state to determine if the configuration collides with an environment obstacle.
@@ -332,16 +368,17 @@ def is_state_valid(state: ob.SE2StateSpace) -> bool:
     """
     # TODO: implement obstacle avoidance here
     # note: `state` is of type `SE2StateInternal`, so we don't need to use the `()` operator.
-    return state.getX() < 0.6
+    # eg: return state.getX() < 0.6
+    return True
 
 
 
-def main(args=None):
-    ompl_path = OMPLPath(max_runtime=1.0)
-    if ompl_path.solved:
-            # self.get_logger("Solved")
-        print("Solved")
-        ompl_path.plot_solution()
+# def main(args=None):
+#     ompl_path = OMPLPath(max_runtime=1.0)
+#     if ompl_path.solved:
+#             # self.get_logger("Solved")
+#         print("Solved")
+#         ompl_path.plot_solution()
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
