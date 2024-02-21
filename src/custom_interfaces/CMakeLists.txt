@@ -14,6 +14,7 @@ set(msg_files
   "msg/HelperPosition.msg"
   "msg/HeadingAngle.msg"
   "msg/State.msg"
+  "msg/Path.msg"
 )
 
 set(srv_files

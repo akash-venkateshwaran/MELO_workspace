@@ -9,6 +9,7 @@ import math
 import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
 
 from path_planning.objectives import get_sailing_objective
 from custom_interfaces.msg import State, HelperPosition, HeadingAngle
@@ -22,36 +23,52 @@ class OMPLPathState:
         # TODO: derive OMPLPathState attributes from navigation
         # Note that when you convert latlon to XY the distance btw two points in XY is in km
 
-        def init_helper(state):
+        def _init_helper(state):
             return HelperPosition(
                     latitude=state.position.latitude,
                     longitude=state.position.longitude,
                     depth=state.position.depth
                 )
+        def _bounds_helper(positions, buffer=10):
+            # Calculate max with added buffer 10 km
+            min_value = -max(np.abs(positions)) - buffer
+            max_value = max(np.abs(positions)) + buffer
+            return (min_value, max_value)
 
-        # Initialize state objects
-        self.mammal_position = init_helper(mammal_current_state)
-        self.ship_position = init_helper(ship_current_state)
-        self.start_position = self.reference_latlon = init_helper(ship_start_state)
-        self.goal_position = init_helper(ship_end_state)
+        
 
+        # Creating HelperPosition for all the inputs
+        self.mammal_position = _init_helper(mammal_current_state)
+        self.ship_position = _init_helper(ship_current_state)
+        self.start_position = self.reference_latlon = _init_helper(ship_start_state)
+        self.goal_position = _init_helper(ship_end_state)
+
+        # Coverting HelperPosition from lat/lon to XY
         self.start_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.start_position)
         self.goal_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.goal_position)
         self.mammal_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.mammal_position)
         self.ship_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.ship_position)
 
-        # adding 1 km buffer for domain and range of XY
-        self.domain_XY = (min(self.start_position_XY[0], self.goal_position_XY[0], self.mammal_position_XY[0], self.ship_position_XY[0]) - 1, max(self.start_position_XY[0], self.goal_position_XY[0], self.mammal_position_XY[0], self.ship_position_XY[0]) + 1)
-        self.range_XY = (min(self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]) - 1, max(self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]) + 1)
+        # Replacing lat lon of states with XY
+        self.ship_current_state_XY = State()
+        self.ship_current_state_XY.position = HelperPosition(latitude=self.ship_position_XY[0], longitude=self.ship_position_XY[1], depth=ship_current_state.position.depth)
+        self.ship_current_state_XY.angle = ship_current_state.angle
+        self.ship_current_state_XY.speed = ship_current_state.speed
 
-        print(self.ship_position_XY)
+        self.mammal_current_state_XY = State()
+        self.mammal_current_state_XY.position = HelperPosition(latitude=self.mammal_position_XY[0], longitude=self.mammal_position_XY[1], depth=mammal_current_state.position.depth)
+        self.mammal_current_state_XY.angle = mammal_current_state.angle
+        self.mammal_current_state_XY.speed = mammal_current_state.speed
+
+        # The state bounds for OMPL
+        self.domain_XY = _bounds_helper([self.start_position_XY[0], self.goal_position_XY[0], self.mammal_position_XY[0], self.ship_position_XY[0]])
+        self.range_XY = _bounds_helper([self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]])
 
 
+        # latlon_pos = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
+        # xy_pos = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
+        # self.plot_latlon_xy_side_by_side(latlon_pos, xy_pos)
 
-
-        # latlon_states = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
-        # xy_states = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
-        # self.plot_latlon_xy_side_by_side(latlon_states, xy_states)
 
     def cartesian_to_true_bearing(self,cartesian: float) -> float:
         """Convert a cartesian angle to the equivalent true bearing.
@@ -101,17 +118,15 @@ class OMPLPathState:
         Returns:
             HelperLatLon: The latitude and longitude in degrees.
         """
-        true_bearing = math.degrees(math.atan2(xy.x, xy.y))
+        true_bearing = math.degrees(math.atan2(xy[0], xy[1]))
         distance = self.km_to_meters(math.hypot(*xy))
         dest_lon, dest_lat, _ = GEODESIC.fwd(
             reference.longitude, reference.latitude, true_bearing, distance
         )
 
-        return HelperPosition(latitude=dest_lat, longitude=dest_lon)
+        return HelperPosition(latitude=dest_lat, longitude=dest_lon, depth=0.0)
     
-    def plot_latlon_xy_side_by_side(self, latlon_states, xy_states):
-        # print(latlon_states, "\n\n")
-        # print(xy_states)
+    def plot_latlon_xy_side_by_side(self, latlon_postions, xy_positions):
         # Create subplots: one for geographic data, one for Cartesian data
         fig = make_subplots(
             rows=1, cols=2,
@@ -122,19 +137,17 @@ class OMPLPathState:
         # Define colors for different states for visualization
         colors = ['red', 'green', 'blue', 'purple']  # Add more colors if there are more than four states
 
-        # Add geographic (lat/lon) plot data
-        for idx, state in enumerate(latlon_states):
+        for idx, pos in enumerate(latlon_postions):
             fig.add_trace(
-                go.Scattergeo(lat=[state.latitude], lon=[state.longitude],
+                go.Scattergeo(lat=[pos.latitude], lon=[pos.longitude],
                             mode='markers', name=f'Lat/Lon {idx}',
                             marker=dict(color=colors[idx], size=10)),
                 row=1, col=1
             )
 
-        # Add Cartesian (XY) plot data, using the same colors
-        for idx, state in enumerate(xy_states):
+        for idx, pos in enumerate(xy_positions):
             fig.add_trace(
-                go.Scatter(x=[state[0]], y=[state[1]], mode='markers', name=f'XY {idx}',
+                go.Scatter(x=[pos[0]], y=[pos[1]], mode='markers', name=f'XY {idx}',
                         marker=dict(color=colors[idx], size=10)),  # Use same color for corresponding XY states
                 row=1, col=2
             )
@@ -192,9 +205,10 @@ class OMPLPath:
             local_path_state (LocalPathState): State of Sailbot.
         """
         # self._logger = parent_logger.get_child(name="ompl_path")
-
+        self.ompl_state = ompl_state
         self._simple_setup = self._init_simple_setup(ompl_state)
         self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
+        self.fig = plt.figure()
 
     def get_cost(self):
         """Get the cost of the path generated.
@@ -218,16 +232,12 @@ class OMPLPath:
         solution_path = self._simple_setup.getSolutionPath()
 
         waypoints = []
+        
 
         for state in solution_path.getStates():
-            #TODO Convert XY to lat lon before appending
-            #  waypoint_XY = cs.XY(state.getX(), state.getY())
-            # waypoint_latlon = cs.xy_to_latlon(self.state.reference_latlon, waypoint_XY)
-            waypoints.append(
-                HelperPosition(
-                    latitude=state.getX(), longitude=state.getY(), depth = 0.0
-                )
-            )
+            waypoint_XY = (state.getX(), state.getY())
+            waypoint_latlon = self.ompl_state.xy_to_latlon(reference=self.ompl_state.reference_latlon,xy=waypoint_XY)
+            waypoints.append(waypoint_latlon)
 
         return waypoints
     
@@ -275,7 +285,7 @@ class OMPLPath:
         # set the goal and start states of the simple setup object
         start = ob.State(space)
         goal = ob.State(space)
-        start().setXY(self.ompl_state.start_position_XY[0], self.ompl_state.start_position_XY[1])
+        start().setXY(self.ompl_state.ship_position_XY[0], self.ompl_state.ship_position_XY[1])
         goal().setXY(self.ompl_state.goal_position_XY[0], self.ompl_state.goal_position_XY[1])
 
         # self._logger.debug(
@@ -300,8 +310,8 @@ class OMPLPath:
         objective = get_sailing_objective(
             space_information,
             simple_setup,
-            self.ompl_state.ship_position_XY,
-            self.ompl_state.mammal_position_XY
+            self.ompl_state.ship_current_state_XY,
+            self.ompl_state.mammal_current_state_XY
         )
         simple_setup.setOptimizationObjective(objective)
 
@@ -312,16 +322,22 @@ class OMPLPath:
 
         return simple_setup
     
+    
     def plot_solution(self):
+        # Clear existing axes, if any, and create two new ones
+        self.fig.clf()  # Clear the figure
+        ax1 = self.fig.add_subplot(121)  # For the contour plot
+        ax2 = self.fig.add_subplot(122)  # For the waypoints
+
+        # Prepare data for contour plot
         x = np.linspace(self.ompl_state.domain_XY[0], self.ompl_state.domain_XY[1], 500)
         y = np.linspace(self.ompl_state.range_XY[0], self.ompl_state.range_XY[1], 500)
         X, Y = np.meshgrid(x, y)
         Z = np.zeros(X.shape)
 
+        # Compute the cost for each grid point (this could be time-consuming)
         space = self._simple_setup.getStateSpace()
         objective = self._simple_setup.getOptimizationObjective()
-        waypoints_XY = self.get_waypoints()
-
         for i in range(X.shape[0]):
             for j in range(X.shape[1]):
                 state = ob.State(space)
@@ -329,31 +345,36 @@ class OMPLPath:
                 raw_state = state.get()
                 cost = objective.stateCost(raw_state)
                 Z[i][j] = cost.value()
-        
-        fig = go.Figure(data=go.Contour(x=x, y=y, z=Z))
 
-        if waypoints_XY: 
-            wp_X = [wp.latitude for wp in waypoints_XY] 
-            wp_Y = [wp.longitude for wp in waypoints_XY]
-            fig.add_trace(go.Scatter(x=wp_X, y=wp_Y, mode='markers+lines', name='Waypoints XY'))
+        # Contour plot
+        cp = ax1.contourf(X, Y, Z, levels=50, cmap='viridis')  # Adjust levels and colormap as needed
+        self.fig.colorbar(cp, ax=ax1, orientation='vertical', label='Cost')
+        ax1.set_title('Solution Space')
+        ax1.set_xlabel('X')
+        ax1.set_ylabel('Y')
 
-        # Scatter plot for start and goal positions
-        fig.add_trace(go.Scatter(x=[self.ompl_state.start_position_XY[0]], y=[self.ompl_state.start_position_XY[1]],
-                                mode='markers', name='Start Position', marker=dict(color='green', size=12)))
-        fig.add_trace(go.Scatter(x=[self.ompl_state.goal_position_XY[0]], y=[self.ompl_state.goal_position_XY[1]],
-                                mode='markers', name='Goal Position', marker=dict(color='orange', size=12)))
+        # Plot waypoints, start, goal, ship, and mammal positions
+        waypoints_XY = self.get_waypoints()  # Make sure this returns a list of HelperPosition objects
+        if waypoints_XY:
+            wp_X = [wp.latitude for wp in waypoints_XY]  # Access latitude as X
+            wp_Y = [wp.longitude for wp in waypoints_XY]  # Access longitude as Y
+            ax2.plot(wp_X, wp_Y, 'o-', label='Waypoints XY')  # 'o-' for line with markers
 
-        # Scatter plot for ship and mammal positions
-        fig.add_trace(go.Scatter(x=[self.ompl_state.ship_position_XY[0]], y=[self.ompl_state.ship_position_XY[1]],
-                                mode='markers', name='Ship Position', marker=dict(color='blue', size=12)))
-        fig.add_trace(go.Scatter(x=[self.ompl_state.mammal_position_XY[0]], y=[self.ompl_state.mammal_position_XY[1]],
-                                mode='markers', name='Mammal Position', marker=dict(color='red', size=12)))
+        # Add markers for special points
+        ax2.scatter([self.ompl_state.start_position_XY[0]], [self.ompl_state.start_position_XY[1]], c='green', label='Start Position', zorder=5)
+        ax2.scatter([self.ompl_state.goal_position_XY[0]], [self.ompl_state.goal_position_XY[1]], c='orange', label='Goal Position', zorder=5)
+        ax2.scatter([self.ompl_state.ship_position_XY[0]], [self.ompl_state.ship_position_XY[1]], c='blue', label='Ship Position', zorder=5)
+        ax2.scatter([self.ompl_state.mammal_position_XY[0]], [self.ompl_state.mammal_position_XY[1]], c='red', label='Mammal Position', zorder=5)
 
-        fig.update_layout(title='Solution Contour Plot',
-                        xaxis_title='X',
-                        yaxis_title='Y')
-        
-        fig.write_html("figure.html")
+        ax2.set_title('Waypoints and Positions')
+        ax2.set_xlabel('X')
+        ax2.set_ylabel('Y')
+        ax2.legend()
+
+        # Update the plot
+        self.fig.canvas.draw_idle()  # Update the figure
+        plt.show(block=False)  # Display the figure without blocking the rest of the script
+
 
 
 

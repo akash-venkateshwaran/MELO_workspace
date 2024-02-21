@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from custom_interfaces.msg import State, HelperPosition, HeadingAngle
+from custom_interfaces.msg import State, HelperPosition, HeadingAngle, Path
 import os
 import csv
 
@@ -15,10 +15,10 @@ class NavigateSystem(Node):
         self.ompl_path_state = None
         self.ship_current_state = State()
         self.mammal_current_state = State()
+        self.ship_optimized_waypoints = Path()
         # TODO here the path is hard coded
         self.load_voyage_definition(os.path.join(os.getcwd(), 'src', 'path_planning','Voyage_definition.csv'))
         self.ship_optimized_state = self.generate_state(0.0, 0.0, 0.0, 90.0, 150.0) # Note that we won't be using the first three elemets. We are exporting only optimized speed and heading
-
         # Create publishers for 'ship_start_state', 'ship_end_state', and 'ship_optimized_state'
         self.ship_start_state_publisher = self.create_publisher(
             State,
@@ -35,6 +35,12 @@ class NavigateSystem(Node):
         self.ship_optimized_state_publisher = self.create_publisher(
             State,
             'ship_optimized_state',
+            10
+        )
+
+        self.ship_optimized_waypoints_publisher = self.create_publisher(
+            Path,
+            'ship_optimized_waypoints',
             10
         )
 
@@ -119,7 +125,6 @@ class NavigateSystem(Node):
 
 
     def solve_ompl(self):
-        print("Innn")
         is_ship_state_changed = (self.ship_current_state.position.latitude != 0.0 or
                                 self.ship_current_state.position.longitude != 0.0 or
                                 self.ship_current_state.position.depth != 0.0 or
@@ -135,15 +140,17 @@ class NavigateSystem(Node):
         
         if is_ship_state_changed and is_mammal_state_changed:
             self.ompl_path_state = OMPLPathState(
-                self.ship_current_state,
-                self.mammal_current_state,
-                self.ship_start_state,
-                self.ship_end_state
+                ship_current_state=self.ship_current_state,
+                mammal_current_state=self.mammal_current_state,
+                ship_start_state=self.ship_start_state,
+                ship_end_state=self.ship_end_state
             )
             ompl_path = OMPLPath(max_runtime=1.0, ompl_state=self.ompl_path_state)
             if ompl_path.solved:
                 self.get_logger().info("Solved")
-                ompl_path.plot_solution()
+                self.ship_optimized_waypoints._waypoints = ompl_path.get_waypoints()
+                self.ship_optimized_waypoints_publisher.publish(self.ship_optimized_waypoints)
+                self.get_logger().info(f"Published optimized waypoints")
             else:
                 self.get_logger().info("Not solved within the given runtime")
         else:
