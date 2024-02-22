@@ -19,7 +19,7 @@ GEODESIC = Geod(ellps="WGS84")
 
 
 class OMPLPathState:
-    def __init__(self,ship_current_state: State, mammal_current_state: State, ship_start_state: State, ship_end_state: State ):
+    def __init__(self,ship_current_state: State, mammal_current_state: State, ship_start_state: State, ship_end_state: State, count: float ):
         # TODO: derive OMPLPathState attributes from navigation
         # Note that when you convert latlon to XY the distance btw two points in XY is in km
 
@@ -42,6 +42,7 @@ class OMPLPathState:
         self.ship_position = _init_helper(ship_current_state)
         self.start_position = self.reference_latlon = _init_helper(ship_start_state)
         self.goal_position = _init_helper(ship_end_state)
+        self.count = count
 
         # Coverting HelperPosition from lat/lon to XY
         self.start_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.start_position)
@@ -209,6 +210,7 @@ class OMPLPath:
         self._simple_setup = self._init_simple_setup(ompl_state)
         self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
         self.fig = plt.figure()
+        self.plot_solution()
 
     def get_cost(self):
         """Get the cost of the path generated.
@@ -218,26 +220,31 @@ class OMPLPath:
         """
         raise NotImplementedError
 
-    def get_waypoints(self) -> List[HelperPosition]:
-        """Get a list of waypoints for the boat to follow.
+    def get_waypoints(self, format: str = 'latlon') -> List[tuple]:
+        """Get a list of waypoints including the start and goal position for the boat to follow.
+
+        Args:
+            format (str): The format of the waypoints, 'latlon' for latitude and longitude, 'xy' for XY coordinates.
 
         Returns:
-            list: A list of tuples representing the x and y coordinates of the waypoints.
-                  Output an empty list and print a warning message if path not solved.
+            list: A list of waypoints. Each waypoint is a tuple representing either the latitude and longitude or the X and Y coordinates,
+                  depending on the specified format. Outputs an empty list and prints a warning message if path not solved.
         """
         if not self.solved:
             self._logger.warning("Trying to get the waypoints of an unsolved OMPLPath")
             return []
 
         solution_path = self._simple_setup.getSolutionPath()
-
         waypoints = []
-        
 
+        # NOTE if xy the func exports as List[tuple] else export as HelperPOsitions
         for state in solution_path.getStates():
-            waypoint_XY = (state.getX(), state.getY())
-            waypoint_latlon = self.ompl_state.xy_to_latlon(reference=self.ompl_state.reference_latlon,xy=waypoint_XY)
-            waypoints.append(waypoint_latlon)
+            if format == 'xy':
+                waypoint = (state.getX(), state.getY())
+            else:
+                waypoint = (state.getX(), state.getY())
+                waypoint = self.ompl_state.xy_to_latlon(reference=self.ompl_state.reference_latlon, xy=waypoint)
+            waypoints.append(waypoint)
 
         return waypoints
     
@@ -324,10 +331,8 @@ class OMPLPath:
     
     
     def plot_solution(self):
-        # Clear existing axes, if any, and create two new ones
         self.fig.clf()  # Clear the figure
-        ax1 = self.fig.add_subplot(121)  # For the contour plot
-        ax2 = self.fig.add_subplot(122)  # For the waypoints
+        ax = self.fig.add_subplot(111)  # For the combined plot
 
         # Prepare data for contour plot
         x = np.linspace(self.ompl_state.domain_XY[0], self.ompl_state.domain_XY[1], 500)
@@ -335,7 +340,7 @@ class OMPLPath:
         X, Y = np.meshgrid(x, y)
         Z = np.zeros(X.shape)
 
-        # Compute the cost for each grid point (this could be time-consuming)
+        # Compute the cost for each grid point
         space = self._simple_setup.getStateSpace()
         objective = self._simple_setup.getOptimizationObjective()
         for i in range(X.shape[0]):
@@ -346,34 +351,34 @@ class OMPLPath:
                 cost = objective.stateCost(raw_state)
                 Z[i][j] = cost.value()
 
-        # Contour plot
-        cp = ax1.contourf(X, Y, Z, levels=50, cmap='viridis')  # Adjust levels and colormap as needed
-        self.fig.colorbar(cp, ax=ax1, orientation='vertical', label='Cost')
-        ax1.set_title('Solution Space')
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
+        # Contour plot as a background
+        cp = ax.contourf(X, Y, Z, levels=50, cmap='viridis')
+        self.fig.colorbar(cp, ax=ax, orientation='vertical', label='Cost')
+        ax.set_title('Solution Space with Waypoints')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
 
-        # Plot waypoints, start, goal, ship, and mammal positions
-        waypoints_XY = self.get_waypoints()  # Make sure this returns a list of HelperPosition objects
-        if waypoints_XY:
-            wp_X = [wp.latitude for wp in waypoints_XY]  # Access latitude as X
-            wp_Y = [wp.longitude for wp in waypoints_XY]  # Access longitude as Y
-            ax2.plot(wp_X, wp_Y, 'o-', label='Waypoints XY')  # 'o-' for line with markers
+        waypoints = self.get_waypoints('xy')
+            # Extract X and Y coordinates from waypoints for plotting
+        waypoints_x = [wp[0] for wp in waypoints]
+        waypoints_y = [wp[1] for wp in waypoints]
+
+        # Plotting waypoints
+        ax.plot(waypoints_x, waypoints_y, 'o-', label='Waypoints XY', color='white')  # white for better visibility
+
 
         # Add markers for special points
-        ax2.scatter([self.ompl_state.start_position_XY[0]], [self.ompl_state.start_position_XY[1]], c='green', label='Start Position', zorder=5)
-        ax2.scatter([self.ompl_state.goal_position_XY[0]], [self.ompl_state.goal_position_XY[1]], c='orange', label='Goal Position', zorder=5)
-        ax2.scatter([self.ompl_state.ship_position_XY[0]], [self.ompl_state.ship_position_XY[1]], c='blue', label='Ship Position', zorder=5)
-        ax2.scatter([self.ompl_state.mammal_position_XY[0]], [self.ompl_state.mammal_position_XY[1]], c='red', label='Mammal Position', zorder=5)
+        ax.scatter([self.ompl_state.start_position_XY[0]], [self.ompl_state.start_position_XY[1]], c='green', label='Start Position', zorder=5, edgecolors='black')
+        ax.scatter([self.ompl_state.goal_position_XY[0]], [self.ompl_state.goal_position_XY[1]], c='orange', label='Goal Position', zorder=5, edgecolors='black')
+        ax.scatter([self.ompl_state.ship_position_XY[0]], [self.ompl_state.ship_position_XY[1]], c='blue', label='Ship Position', zorder=5, edgecolors='black')
+        ax.scatter([self.ompl_state.mammal_position_XY[0]], [self.ompl_state.mammal_position_XY[1]], c='red', label='Mammal Position', zorder=5, edgecolors='black')
 
-        ax2.set_title('Waypoints and Positions')
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
-        ax2.legend()
+        ax.legend()
 
-        # Update the plot
-        self.fig.canvas.draw_idle()  # Update the figure
-        plt.show(block=False)  # Display the figure without blocking the rest of the script
+         # Save the figure
+        filename = f"Fig_{self.ompl_state.count}.png"  # Assuming self.ompl_state.count is correctly updated
+        self.fig.savefig(filename)
+
 
 
 

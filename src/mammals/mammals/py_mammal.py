@@ -21,8 +21,8 @@ class Mammal(Node):
         latitude = random.uniform(46.81041717529297, 49.98125076293945)
         longitude = random.uniform(-125.19791412353516,-121.56041717529297)
         depth = random.uniform(10, 2000)
-        heading = random.uniform(0, 360)
-        speed = 150.0  #must always be in m/s for distance calc
+        heading =180.0
+        speed = 500.0  #must always be in m/s for distance calc
 
         return State(
             position=HelperPosition(latitude=latitude, longitude=longitude, depth=depth),

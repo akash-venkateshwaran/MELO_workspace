@@ -16,6 +16,7 @@ class NavigateSystem(Node):
         self.ship_current_state = State()
         self.mammal_current_state = State()
         self.ship_optimized_waypoints = Path()
+        self.temp = 0
         # TODO here the path is hard coded
         self.load_voyage_definition(os.path.join(os.getcwd(), 'src', 'path_planning','Voyage_definition.csv'))
         self.ship_optimized_state = self.generate_state(0.0, 0.0, 0.0, 90.0, 150.0) # Note that we won't be using the first three elemets. We are exporting only optimized speed and heading
@@ -139,11 +140,12 @@ class NavigateSystem(Node):
 
         
         if is_ship_state_changed and is_mammal_state_changed:
+            self.temp+=1
             self.ompl_path_state = OMPLPathState(
                 ship_current_state=self.ship_current_state,
                 mammal_current_state=self.mammal_current_state,
                 ship_start_state=self.ship_start_state,
-                ship_end_state=self.ship_end_state
+                ship_end_state=self.ship_end_state, count = self.temp
             )
             ompl_path = OMPLPath(max_runtime=1.0, ompl_state=self.ompl_path_state)
             if ompl_path.solved:
