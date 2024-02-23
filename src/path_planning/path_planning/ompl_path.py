@@ -66,6 +66,7 @@ class OMPLPathState:
         self.range_XY = _bounds_helper([self.start_position_XY[1], self.goal_position_XY[1], self.mammal_position_XY[1], self.ship_position_XY[1]])
 
 
+
         # latlon_pos = [self.start_position, self.goal_position, self.mammal_position, self.ship_position]
         # xy_pos = [self.start_position_XY, self.goal_position_XY, self.mammal_position_XY, self.ship_position_XY]
         # self.plot_latlon_xy_side_by_side(latlon_pos, xy_pos)
@@ -358,6 +359,8 @@ class OMPLPath:
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
 
+        # ax.set_aspect('equal', adjustable='box')
+
         waypoints = self.get_waypoints('xy')
             # Extract X and Y coordinates from waypoints for plotting
         waypoints_x = [wp[0] for wp in waypoints]
@@ -377,7 +380,7 @@ class OMPLPath:
 
          # Save the figure
         filename = f"Fig_{self.ompl_state.count}.png"  # Assuming self.ompl_state.count is correctly updated
-        self.fig.savefig(filename)
+        self.fig.savefig("imgs/"+filename)
 
 
 

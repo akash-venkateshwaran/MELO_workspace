@@ -3,6 +3,9 @@ from rclpy.node import Node
 from custom_interfaces.msg import State, HelperPosition, HeadingAngle
 from pyproj import Geod
 
+GEODESIC = Geod(ellps="WGS84")
+
+
 class Ship(Node):
     def __init__(self):
         super().__init__('ship_node')
@@ -52,9 +55,7 @@ class Ship(Node):
     def update_state(self):
         if self.current_state is not None:
             distance = self.current_state.speed * self.timer_period
-
-            g = Geod(ellps='clrk66')
-            endlon, endlat, _ = g.fwd(
+            endlon, endlat, _ = GEODESIC.fwd(
                 self.current_state.position.longitude,
                 self.current_state.position.latitude,
                 self.current_state.angle.heading,
