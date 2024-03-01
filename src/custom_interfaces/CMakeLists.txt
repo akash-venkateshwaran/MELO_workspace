@@ -19,6 +19,7 @@ set(msg_files
 
 set(srv_files
   "srv/BathyService.srv"
+  "srv/ShorelineService.srv"
 )
 
 # Add the custom message and service files

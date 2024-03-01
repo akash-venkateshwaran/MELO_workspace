@@ -46,6 +46,10 @@ RUN pip3 install pygccxml pyplusplus
 RUN pip3 install pyproj
 RUN pip3 install plotly
 RUN pip3 install pyproj
+RUN pip3 install netCDF4
+RUN pip3 install scipy
+RUN pip3 install matplotlib
+RUN pip3 install alphashape
 
 WORKDIR /ompl
 RUN cmake \

@@ -6,7 +6,7 @@ from custom_interfaces.srv import BathyService
 
 class Bathymetry:
     def __init__(self, bathy_data_loc: str):
-        self.bathy_data_loc = bathy_data_loc
+        self.data_loc = bathy_data_loc
 
     def create_random_bathy_points(self, request: BathyService.Request, num_points: int):
         latitudes = np.linspace(request.bathy_box_edge1.latitude, request.bathy_box_edge2.latitude, num_points)
@@ -31,10 +31,10 @@ class Bathymetry:
         # print(f"bathy_box_edge2: {request.bathy_box_edge2.latitude}, {request.bathy_box_edge2.longitude}, {request.bathy_box_edge2.depth}")
         
 
-        if os.path.exists(self.bathy_data_loc):
-            for file_name in os.listdir(self.bathy_data_loc):
+        if os.path.exists(self.data_loc):
+            for file_name in os.listdir(self.data_loc):
                 if file_name.endswith('.nc'):
-                    file_path = os.path.join(self.bathy_data_loc, file_name)
+                    file_path = os.path.join(self.data_loc, file_name)
                     with nc.Dataset(file_path, 'r') as nc_file:
                         latitudes = nc_file.variables['lat'][:]
                         longitudes = nc_file.variables['lon'][:]
@@ -55,8 +55,8 @@ class Bathymetry:
                         bathy_points.append(point)
 
                 else:
-                    print(f"No bathymetry netCDF data found in the dir: {self.bathy_data_loc}")
+                    print(f"No bathymetry netCDF data found in the dir: {self.data_loc}")
         else:
-            print(f"Directory not found: {self.bathy_data_loc}")
+            print(f"Directory not found: {self.data_loc}")
 
         return bathy_points

@@ -5,6 +5,8 @@ from rclpy.impl.rcutils_logger import RcutilsLogger
 from typing import List
 from pyproj import Geod
 import math
+import alphashape
+
 
 import numpy as np
 import plotly.graph_objs as go
@@ -19,7 +21,7 @@ GEODESIC = Geod(ellps="WGS84")
 
 
 class OMPLPathState:
-    def __init__(self,ship_current_state: State, mammal_current_state: State, ship_start_state: State, ship_end_state: State, count: float ):
+    def __init__(self,ship_current_state: State, mammal_current_state: State, ship_start_state: State, ship_end_state: State, bathy_points: List[HelperPosition], count: float ):
         # TODO: derive OMPLPathState attributes from navigation
         # Note that when you convert latlon to XY the distance btw two points in XY is in km
 
@@ -43,6 +45,7 @@ class OMPLPathState:
         self.start_position = self.reference_latlon = _init_helper(ship_start_state)
         self.goal_position = _init_helper(ship_end_state)
         self.count = count
+        self.bathy_points = bathy_points
 
         # Coverting HelperPosition from lat/lon to XY
         self.start_position_XY = self.latlon_to_xy(reference=self.reference_latlon,latlon=self.start_position)
@@ -184,6 +187,7 @@ class OMPLPathState:
         fig.write_html("figure2.html")
 
 
+
 class OMPLPath:
     """Represents the general OMPL Path.
 
@@ -208,10 +212,11 @@ class OMPLPath:
         """
         # self._logger = parent_logger.get_child(name="ompl_path")
         self.ompl_state = ompl_state
-        self._simple_setup = self._init_simple_setup(ompl_state)
-        self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
-        self.fig = plt.figure()
-        self.plot_solution()
+        self.compute_valid_states(bathy_points = self.ompl_state.bathy_points, ship_draft = 0.0)
+        # self._simple_setup = self._init_simple_setup(ompl_state)
+        # self.solved = self._simple_setup.solve(time=max_runtime)  # time is in seconds
+        # self.fig = plt.figure()
+        # self.plot_solution()
 
     def get_cost(self):
         """Get the cost of the path generated.
@@ -382,23 +387,31 @@ class OMPLPath:
         filename = f"Fig_{self.ompl_state.count}.png"  # Assuming self.ompl_state.count is correctly updated
         self.fig.savefig("imgs/"+filename)
 
+    def compute_valid_states(self,bathy_points: List[HelperPosition], buffer_distance: float = 0.0):
+            """
+
+            Args:
+                buffer_distance (float): Buffer distance from the shorelines.
+            """
 
 
 
 
-def is_state_valid(state: ob.SE2StateSpace) -> bool:
-    """Evaluate a state to determine if the configuration collides with an environment obstacle.
 
-    Args:
-        state (ob.SE2StateSpace): State to check.
 
-    Returns:
-        bool: True if state is valid, else false.
-    """
-    # TODO: implement obstacle avoidance here
-    # note: `state` is of type `SE2StateInternal`, so we don't need to use the `()` operator.
-    # eg: return state.getX() < 0.6
-    return True
+    def is_state_valid(state: ob.SE2StateSpace) -> bool:
+        """Evaluate a state to determine if the configuration collides with an environment obstacle.
+
+        Args:
+            state (ob.SE2StateSpace): State to check.
+
+        Returns:
+            bool: True if state is valid, else false.
+        """
+        # TODO: implement obstacle avoidance here
+        # note: `state` is of type `SE2StateInternal`, so we don't need to use the `()` operator.
+        # eg: return state.getX() < 0.6
+        return True
 
 
 
