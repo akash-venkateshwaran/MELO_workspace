@@ -27,9 +27,8 @@ class Bathymetry:
 
     def get_bathy(self, request: BathyService.Request):
         bathy_points = []
-        # print(f"bathy_box_edge1: {request.bathy_box_edge1.latitude}, {request.bathy_box_edge1.longitude}, {request.bathy_box_edge1.depth}")
-        # print(f"bathy_box_edge2: {request.bathy_box_edge2.latitude}, {request.bathy_box_edge2.longitude}, {request.bathy_box_edge2.depth}")
-        
+        min_lat, min_lon = request.bathy_box_edge1.latitude, request.bathy_box_edge1.longitude
+        max_lat, max_lon = request.bathy_box_edge2.latitude, request.bathy_box_edge2.longitude
 
         if os.path.exists(self.data_loc):
             for file_name in os.listdir(self.data_loc):
@@ -48,11 +47,12 @@ class Bathymetry:
                     longitudes = np.tile(longitudes, len_lat)
 
                     for lat, lon, depth in zip(latitudes, longitudes, depths):
-                        point = HelperPosition()
-                        point.latitude = lat
-                        point.longitude = lon
-                        point.depth = float(depth)
-                        bathy_points.append(point)
+                        if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                            point = HelperPosition()
+                            point.latitude = lat
+                            point.longitude = lon
+                            point.depth = float(depth)
+                            bathy_points.append(point)
 
                 else:
                     print(f"No bathymetry netCDF data found in the dir: {self.data_loc}")

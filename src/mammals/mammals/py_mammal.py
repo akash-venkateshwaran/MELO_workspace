@@ -22,11 +22,11 @@ class Mammal(Node):
     def generate_random_state(self):
         # latitude = random.uniform(46.81041717529297, 49.98125076293945)
         # longitude = random.uniform(-125.19791412353516,-121.56041717529297)
-        latitude = 49.00
-        longitude = -124.00
+        latitude = 47.80425159702418
+        longitude = -124.8258704381985
         depth = random.uniform(10, 2000)
         heading =120.0
-        speed = 2000.0  #must always be in m/s for distance calc
+        speed = 0.0  #must always be in m/s for distance calc
 
         return State(
             position=HelperPosition(latitude=latitude, longitude=longitude, depth=depth),

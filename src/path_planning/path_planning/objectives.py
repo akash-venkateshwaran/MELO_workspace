@@ -68,6 +68,8 @@ class Objective(ob.StateCostIntegralObjective):
         """
         normalized_cost = cost / self.max_state_cost
         return min(normalized_cost, 1.0)
+    
+
 
 
 class EuclideanDistanceMammalObjective(Objective):
@@ -79,7 +81,7 @@ class EuclideanDistanceMammalObjective(Objective):
 
     def stateCost(self, s:ob.SE2StateSpace)-> ob.Cost:
         distance = math.sqrt((s.getX() - self.mammal_state.position.latitude) ** 2 + (s.getY() - self.mammal_state.position.longitude) ** 2)
-        cost = 150*math.exp(-(distance**2)/1000)
+        cost = 150*math.exp(-(distance**2)/10)
         return ob.Cost(cost)
     
     # def motionCost(self, s1: ob.SE2StateSpace, s2: ob.SE2StateSpace) -> ob.Cost:
@@ -92,12 +94,15 @@ class EuclideanDistanceMammalObjective(Objective):
 class EuclideanDistanceGoalObjective(Objective):
     def __init__(self, si,simple_setup):
         self.simple_setup = simple_setup
+        self.goal = simple_setup.getGoal()
         self.goal_state = simple_setup.getGoal().getState()
         super().__init__(si,num_samples=100)
 
     def stateCost(self, s:ob.SE2StateSpace)-> ob.Cost:
         distance = math.sqrt((s.getX() - self.goal_state.getX()) ** 2 + (s.getY() - self.goal_state.getY()) ** 2)
         return ob.Cost((distance))
+    
+
     
     # def motionCost(self, s1: ob.SE2StateSpace, s2: ob.SE2StateSpace) -> ob.Cost:
     #     cost_s1 = math.sqrt((self.goal_state.getX() - s1.getX()) ** 2 + (self.goal_state.getY() - s1.getY()) ** 2)
@@ -106,20 +111,25 @@ class EuclideanDistanceGoalObjective(Objective):
     #     return ob.Cost(cost_diff)
 
 
-
 def get_sailing_objective(
     space_information,
     simple_setup,
     ship_state: State,
-    mammal_state: State
-) -> ob.OptimizationObjective:
-    objective = ob.MultiOptimizationObjective(si=space_information)
-    objective.addObjective(
-        objective=EuclideanDistanceMammalObjective(space_information,simple_setup, mammal_state = mammal_state),
-        weight=0.6,
-    )
-    objective.addObjective(
-        objective=EuclideanDistanceGoalObjective(space_information,simple_setup),
-        weight=0.4,
-    )
-    return objective
+    mammal_state: State) -> ob.OptimizationObjective:
+        objective = ob.MultiOptimizationObjective(si=space_information)
+        objective.addObjective(
+            objective=EuclideanDistanceMammalObjective(space_information,simple_setup, mammal_state = mammal_state),
+            weight=0.6,
+        )
+        objective.addObjective(
+            objective=EuclideanDistanceGoalObjective(space_information,simple_setup),
+            weight=0.4,
+        )
+        objective.setCostToGoHeuristic(ob.CostToGoHeuristic(ob.goalRegionCostToGo))
+        return objective
+
+
+def costToGo(s:ob.SE2StateSpace,g:ob.Goal) -> ob.Cost:
+        goal_state = g.getState()
+        distance = math.sqrt((s.getX() -goal_state.getX()) ** 2 + (s.getY() - goal_state.getY()) ** 2)
+        return ob.Cost(distance)

@@ -30,10 +30,11 @@ class NavigateSystem(Node):
         # TODO Come up with a logic for domain space
         self.bathy_points = []
         self.shoreline_polygons = []  # List of GeoSeries geometric objects in lat/lon
-        self.bathy_max_lat = 52.0 
-        self.bathy_min_lat = 48.0  
-        self.bathy_max_lon = -121.0  
-        self.bathy_min_lon = -130.0 
+        self.bathy_buffer = 1
+        self.bathy_max_lat = 49.55530783251801 + self.bathy_buffer
+        self.bathy_min_lat = 47.619114710530006 - self.bathy_buffer
+        self.bathy_max_lon = -121.98105424567228 + self.bathy_buffer 
+        self.bathy_min_lon = -124.63870000551913 - self.bathy_buffer
 
 
         self.load_voyage_definition(os.path.join(os.getcwd(), 'src', 'path_planning','Voyage_definition.csv'))
@@ -168,23 +169,27 @@ class NavigateSystem(Node):
                                 self.mammal_current_state.speed != 0.0)  
 
         
-        if is_ship_state_changed and is_mammal_state_changed:
+        if is_ship_state_changed and is_mammal_state_changed and len(self.bathy_points) != 0 and len(self.shoreline_polygons) != 0:
             self.temp+=1
             self.ompl_path_state = OMPLPathState(
                 ship_current_state=self.ship_current_state,
                 mammal_current_state=self.mammal_current_state,
                 ship_start_state=self.ship_start_state,
-                ship_end_state=self.ship_end_state, bathy_points = self.bathy_points,count = self.temp
+                ship_end_state=self.ship_end_state, bathy_points = self.bathy_points,count = self.temp,
+                shoreline_polygons=self.shoreline_polygons
             )
-            ompl_path = OMPLPath(max_runtime=1.0, ompl_state=self.ompl_path_state)
+            ompl_path = OMPLPath(max_runtime=3600.0, ompl_state=self.ompl_path_state)
             if ompl_path.solved:
-                self.get_logger().info("Solved")
-                self.ship_optimized_waypoints._waypoints = ompl_path.get_waypoints()
+                distance = ompl_path.distance_from_goal()
+                total_cost = ompl_path._simple_setup.getSolutionPath().cost(ompl_path._simple_setup.getOptimizationObjective()).value()
+                self.get_logger().info(f"Solved: Final Total cost of the path: {total_cost} Distance btw the last waypoint and goal state: {distance} km")
+
+                self.ship_optimized_waypoints._waypoints =  ompl_path.get_waypoints()
                 self.estimate_optimized_state()
             else:
                 self.get_logger().info("Not solved within the given runtime")
         else:
-            self.get_logger().info("Ship and mammal states have not changed from initialization; skipping OMPLPath execution.")
+            self.get_logger().info("Ship/mammal states have not changed from initialization/bathy or shoreline not received; skipping OMPLPath execution.")
 
     
     def estimate_optimized_state(self):
